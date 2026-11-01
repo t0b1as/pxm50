@@ -1,0 +1,6 @@
+# Kopieren nach /etc/pxm50/ha.conf und ausfüllen (chmod 600). Nicht ins Git!
+HA_URL=http://192.168.1.10:8123
+HA_TOKEN=hier-den-langlebigen-Token-des-Panel-Benutzers
+CAMERA=camera.eastside_flussig
+# optional: eigener NTP-Server (z. B. Router), Standard de.pool.ntp.org
+#NTP_SERVER=192.168.1.1

@@ -1,0 +1,35 @@
+/* LVGL 9.2 – minimale Konfiguration für PXM50 (1376x768, RGB565, fbdev eigener Flush) */
+#if 1
+#ifndef LV_CONF_H
+#define LV_CONF_H
+
+#define LV_COLOR_DEPTH 16
+
+#define LV_USE_STDLIB_MALLOC   LV_STDLIB_CLIB
+#define LV_USE_STDLIB_STRING   LV_STDLIB_CLIB
+#define LV_USE_STDLIB_SPRINTF  LV_STDLIB_CLIB
+
+#define LV_USE_OS LV_OS_NONE
+#define LV_DEF_REFR_PERIOD 33
+#define LV_DPI_DEF 110
+
+#define LV_USE_LOG 1
+#define LV_LOG_LEVEL LV_LOG_LEVEL_WARN
+#define LV_LOG_PRINTF 1
+
+#define LV_FONT_MONTSERRAT_14 1
+#define LV_FONT_MONTSERRAT_20 1
+#define LV_FONT_MONTSERRAT_28 1
+#define LV_FONT_MONTSERRAT_40 1
+#define LV_FONT_DEFAULT &lv_font_montserrat_20
+
+#define LV_USE_TINY_TTF 1
+#define LV_TINY_TTF_FILE_SUPPORT 0
+#define LV_TINY_TTF_CACHE_GLYPH_CNT 512
+
+#define LV_USE_CANVAS 1
+#define LV_USE_THEME_DEFAULT 1
+#define LV_THEME_DEFAULT_DARK 1
+
+#endif /* LV_CONF_H */
+#endif

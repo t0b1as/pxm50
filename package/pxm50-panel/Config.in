@@ -1,0 +1,11 @@
+config BR2_PACKAGE_PXM50_PANEL
+	bool "pxm50-panel"
+	depends on BR2_TOOLCHAIN_HAS_THREADS
+	select BR2_PACKAGE_PXM50_LVGL
+	select BR2_PACKAGE_LIBCURL
+	select BR2_PACKAGE_CJSON
+	select BR2_PACKAGE_JPEG
+	select BR2_PACKAGE_TSLIB
+	select BR2_PACKAGE_DEJAVU
+	help
+	  Home-Assistant-Wandpanel für Siemens PXM50 (LVGL auf fbdev).

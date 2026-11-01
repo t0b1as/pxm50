@@ -1,0 +1,9 @@
+output
+*.bin
+*.img
+rootfs/
+extractions/
+zImage
+vmlinux
+pxm50-eeprom.txt
+ha.conf

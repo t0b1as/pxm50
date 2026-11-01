@@ -1,0 +1,3 @@
+# Kein EFI-Capsule-Tool (spart gnutls-Ärger)
+# CONFIG_TOOLS_MKEFICAPSULE is not set
+CONFIG_BOOTDELAY=2

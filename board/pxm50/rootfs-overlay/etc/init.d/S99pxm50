@@ -1,0 +1,14 @@
+#!/bin/sh
+# Boot-Status ins Kernel-Log (Testbild manuell: testbild)
+case "$1" in
+start)
+	(
+		sleep 10
+		IP=$(ip -4 -o addr show eth0 2>/dev/null | awk '{print $4}')
+		LUX=$(cat /sys/bus/iio/devices/*/in_illuminance0_input 2>/dev/null | head -n1)
+		[ -e /sys/bus/i2c/devices/2-0004/driver ] && TOUCH=ok || TOUCH=FEHLT
+		echo "PXM50 v0.7.1 | IP ${IP:-keine} | Lux ${LUX:-?} | Touch $TOUCH" > /dev/kmsg
+	) &
+	;;
+esac
+exit 0

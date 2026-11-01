@@ -1,0 +1,2 @@
+source "$BR2_EXTERNAL_PXM50_PATH/package/pxm50-lvgl/Config.in"
+source "$BR2_EXTERNAL_PXM50_PATH/package/pxm50-panel/Config.in"

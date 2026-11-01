@@ -1,0 +1,15 @@
+#!/bin/sh
+# NTP über Busybox-ntpd, falls vorhanden. Server: NTP_SERVER in /etc/pxm50/ha.conf
+case "$1" in
+start)
+	NTP_SERVER=de.pool.ntp.org
+	[ -f /etc/pxm50/ha.conf ] && . /etc/pxm50/ha.conf
+	if busybox ntpd --help >/dev/null 2>&1 || command -v ntpd >/dev/null; then
+		ntpd -p "$NTP_SERVER" && echo "ntp: $NTP_SERVER"
+	else
+		echo "ntp: kein ntpd – Uhr kommt vom Panel über HA"
+	fi
+	;;
+stop) killall -q ntpd ;;
+esac
+exit 0

@@ -1,0 +1,20 @@
+#!/bin/sh
+# eGalax @ i2c2 0x04: Fallback, falls egalax_ts beim Booten zu früh geprobt hat.
+case "$1" in
+start)
+	D=/sys/bus/i2c/devices/2-0004
+	[ -e "$D/driver" ] && exit 0
+	B=$(for c in /sys/class/gpio/gpiochip*; do grep -qE '32-63|4804c000' $c/label && cat $c/base; done)
+	N=$((B + 24))
+	echo $N > /sys/class/gpio/export 2>/dev/null
+	echo out > /sys/class/gpio/gpio$N/direction
+	echo 0 > /sys/class/gpio/gpio$N/value
+	sleep 1
+	echo in > /sys/class/gpio/gpio$N/direction
+	echo $N > /sys/class/gpio/unexport
+	sleep 1
+	echo 2-0004 > /sys/bus/i2c/drivers/egalax_ts/bind 2>/dev/null
+	if [ -e "$D/driver" ]; then echo "touch: egalax gebunden (Fallback)"; else echo "touch: FEHLER, egalax nicht gebunden"; fi
+	;;
+esac
+exit 0

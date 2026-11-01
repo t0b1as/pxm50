@@ -1,0 +1,33 @@
+#!/bin/sh
+# Farbbalken auf /dev/fb0, von oben: ROT GRÜN BLAU WEISS GELB CYAN MAGENTA SCHWARZ
+# Pixelformat kommt direkt aus DRM (debugfs), nicht geraten.
+SYS=/sys/class/graphics/fb0
+[ -e /dev/fb0 ] || { echo "testbild: kein /dev/fb0"; exit 1; }
+STRIDE=$(cat $SYS/stride)
+H=$(sed -n 's/.*x\([0-9]*\).*/\1/p' $SYS/modes | head -n1)
+[ -n "$H" ] || H=768
+BAND=$(( STRIDE * (H / 8) ))
+
+[ -d /sys/kernel/debug/dri ] || mount -t debugfs none /sys/kernel/debug 2>/dev/null
+F=$(grep -m1 -o 'format=[A-Z0-9]*' /sys/kernel/debug/dri/0/state 2>/dev/null | cut -d= -f2)
+
+case "$F" in
+RG16) C="\000\370 \340\007 \037\000 \377\377 \340\377 \377\007 \037\370 \000\000" ;;
+BG16) C="\037\000 \340\007 \000\370 \377\377 \377\007 \340\377 \037\370 \000\000" ;;
+XR24|AR24) C="\000\000\377\000 \000\377\000\000 \377\000\000\000 \377\377\377\000 \000\377\377\000 \377\377\000\000 \377\000\377\000 \000\000\000\000" ;;
+XB24|AB24) C="\377\000\000\000 \000\377\000\000 \000\000\377\000 \377\377\377\000 \377\377\000\000 \000\377\377\000 \377\000\377\000 \000\000\000\000" ;;
+*) echo "testbild: unbekanntes Format '$F'"; exit 1 ;;
+esac
+
+rep() {
+	printf "$1" > /tmp/tb.p
+	while [ "$(wc -c < /tmp/tb.p)" -lt "$2" ]; do
+		cat /tmp/tb.p /tmp/tb.p > /tmp/tb.q && mv /tmp/tb.q /tmp/tb.p
+	done
+	head -c "$2" /tmp/tb.p
+}
+
+echo 0 > /sys/class/graphics/fbcon/cursor_blink 2>/dev/null
+{ for c in $C; do rep "$c" "$BAND"; done; } > /dev/fb0
+rm -f /tmp/tb.p
+echo "$F stride $STRIDE"

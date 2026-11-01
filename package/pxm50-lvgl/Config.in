@@ -1,0 +1,4 @@
+config BR2_PACKAGE_PXM50_LVGL
+	bool
+	help
+	  LVGL-Quellen (nur Download/Entpacken) für pxm50-panel.

@@ -1,0 +1,25 @@
+#!/bin/sh
+# HA-Panel (LVGL) – startet mit Watchdog-Schleife, Log: /var/log/pxm50-panel.log
+CONF=/etc/pxm50/ha.conf
+case "$1" in
+start)
+	[ -f "$CONF" ] || { echo "panel: $CONF fehlt – siehe $CONF.example"; exit 0; }
+	(
+		export TZ='CET-1CEST,M3.5.0,M10.5.0/3'
+		export TSLIB_TSDEVICE=/dev/input/event0 TSLIB_CALIBFILE=/etc/pointercal TSLIB_CONFFILE=/etc/ts.conf
+		i=0; while [ ! -e /dev/input/event0 ] && [ $i -lt 15 ]; do sleep 1; i=$((i+1)); done
+		while true; do
+			/usr/bin/pxm50-panel "$CONF" >> /var/log/pxm50-panel.log 2>&1
+			sleep 3
+		done
+	) &
+	echo "panel: gestartet"
+	;;
+stop)
+	killall -q S90panel pxm50-panel
+	;;
+restart)
+	"$0" stop; sleep 1; "$0" start
+	;;
+esac
+exit 0
