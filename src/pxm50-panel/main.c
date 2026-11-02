@@ -3,7 +3,8 @@
  *
  * - LVGL 9.2, eigener fbdev-Flush (Panel ist BGR565 → R/B-Tausch beim Kopieren)
  * - Touch über tslib (pointercal), Schalter per langem Druck
- * - HA REST-API: Polling alle 3 s, Service-Calls über Queue im Worker-Thread
+ * - HA WebSocket-API: subscribe_entities (nur Panel-Entities), Ping 10 s, Reconnect mit Backoff;
+ *   REST nur noch für Service-Calls, Zeit-Sync und als Fallback-Polling, wenn WS > 20 s weg ist
  * - Kamera: /api/camera_proxy als JPEG, libjpeg-turbo mit Skalierung beim Dekodieren;
  *   Tippen auf die Kachel → Vollbild-Seite, Tippen → zurück (keine Auto-Rückkehr)
  * - Backlight automatisch über TSL2561, rote LED = HA nicht erreichbar
@@ -23,6 +24,9 @@
 #include <time.h>
 #include <math.h>
 #include <glob.h>
+#include <errno.h>
+#include <netdb.h>
+#include <sys/socket.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <sys/time.h>
@@ -133,7 +137,8 @@ static ent_t ents[] = {
 #define N_ENTS ((int)(sizeof ents / sizeof ents[0]))
 
 static pthread_mutex_t g_lock = PTHREAD_MUTEX_INITIALIZER;
-static time_t g_last_ok;            /* letzter erfolgreicher HA-Abruf */
+static time_t g_last_ok;            /* letzter erfolgreicher HA-Kontakt (REST oder WS) */
+static time_t g_ws_last;            /* letztes Lebenszeichen über WebSocket */
 
 static ent_t *find_ent(const char *id)
 {
@@ -301,20 +306,327 @@ static void *worker(void *arg)
 {
 	CURL *c = curl_easy_init();
 	mem_t m = { 0 };
-	time_t last_sync = 0;
+	time_t last_sync = 0, last_poll = 0;
 	for (;;) {
-		if (time(NULL) - last_sync > 600 || time(NULL) < 1700000000) {
+		time_t now = time(NULL);
+		if (now - last_sync > 600 || now < 1700000000) {
 			sync_time(c, &m);
 			last_sync = time(NULL);
 		}
-		for (int i = 0; i < N_ENTS; i++) {
-			run_cmds(c, &m);
-			poll_ent(c, &ents[i], &m);
+		run_cmds(c, &m);
+		/* Fallback: WebSocket seit > 20 s stumm → per REST abfragen (alle 3 s) */
+		pthread_mutex_lock(&g_lock);
+		int ws_dead = time(NULL) - g_ws_last > 20;
+		pthread_mutex_unlock(&g_lock);
+		if (ws_dead && time(NULL) - last_poll >= 3) {
+			for (int i = 0; i < N_ENTS; i++) {
+				run_cmds(c, &m);
+				poll_ent(c, &ents[i], &m);
+			}
+			last_poll = time(NULL);
 		}
-		for (int t = 0; t < 10; t++) {       /* 1 s Pause, Befehle sofort */
-			run_cmds(c, &m);
-			usleep(100000);
+		usleep(100000);
+	}
+	return NULL;
+}
+
+/* ------------------------------------------------------------------------- */
+/* WebSocket (RFC 6455, nur ws://, Client-Seite)                             */
+/* ------------------------------------------------------------------------- */
+static int url_hostport(char *host, size_t hn, char *port, size_t pn)
+{
+	const char *u = cfg.url;
+	char hp[256];
+	if (!strncmp(u, "http://", 7)) u += 7;
+	else return -1;                                   /* https:// nicht unterstützt */
+	const char *sl = strchr(u, '/');
+	snprintf(hp, sizeof hp, "%.*s", (int)(sl ? (size_t)(sl - u) : strlen(u)), u);
+	char *co = strrchr(hp, ':');
+	if (co) { *co = 0; snprintf(port, pn, "%s", co + 1); }
+	else snprintf(port, pn, "80");
+	snprintf(host, hn, "%s", hp);
+	return 0;
+}
+
+static int send_all(int fd, const void *b, size_t n)
+{
+	const char *p = b;
+	while (n) {
+		ssize_t r = send(fd, p, n, MSG_NOSIGNAL);
+		if (r < 0 && errno == EINTR) continue;
+		if (r <= 0) return -1;
+		p += r; n -= r;
+	}
+	return 0;
+}
+
+/* 1 = ok, 0 = Timeout ohne Daten (nur mit allow_timeout), -1 = Fehler/geschlossen */
+static int recv_exact(int fd, void *b, size_t n, int allow_timeout)
+{
+	size_t got = 0;
+	int idle = 0;
+	while (got < n) {
+		ssize_t r = recv(fd, (char *)b + got, n - got, 0);
+		if (r > 0) { got += r; idle = 0; continue; }
+		if (r == 0) return -1;
+		if (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR) {
+			if (got == 0 && allow_timeout) return 0;
+			if (++idle > 30) return -1;               /* mitten im Frame 30 s nichts */
+			continue;
 		}
+		return -1;
+	}
+	return 1;
+}
+
+static int ws_send(int fd, int op, const char *d, size_t n)
+{
+	uint8_t h[14], mk[4], buf[512];
+	size_t hl = 0;
+	h[hl++] = 0x80 | op;
+	if (n < 126) h[hl++] = 0x80 | n;
+	else if (n < 65536) { h[hl++] = 0x80 | 126; h[hl++] = n >> 8; h[hl++] = n & 0xFF; }
+	else { h[hl++] = 0x80 | 127; for (int i = 7; i >= 0; i--) h[hl++] = (uint8_t)((uint64_t)n >> (8 * i)); }
+	for (int i = 0; i < 4; i++) mk[i] = rand() & 0xFF;
+	memcpy(h + hl, mk, 4);
+	hl += 4;
+	if (send_all(fd, h, hl)) return -1;
+	for (size_t i = 0; i < n;) {
+		size_t k = n - i > sizeof buf ? sizeof buf : n - i;
+		for (size_t j = 0; j < k; j++) buf[j] = d[i + j] ^ mk[(i + j) & 3];
+		if (send_all(fd, buf, k)) return -1;
+		i += k;
+	}
+	return 0;
+}
+
+static char *ws_msg;
+static size_t ws_len, ws_cap;
+
+/* 1 = Nachricht komplett in ws_msg, 0 = nichts da, -1 = Verbindung weg */
+static int ws_recv_msg(int fd)
+{
+	for (;;) {
+		uint8_t h[2], e[8], mk[4] = { 0 };
+		int r = recv_exact(fd, h, 2, ws_len == 0);
+		if (r <= 0) return r;
+		int fin = h[0] & 0x80, op = h[0] & 0x0F, masked = h[1] & 0x80;
+		uint64_t len = h[1] & 0x7F;
+		if (len == 126) {
+			if (recv_exact(fd, e, 2, 0) < 0) return -1;
+			len = (uint64_t)e[0] << 8 | e[1];
+		} else if (len == 127) {
+			if (recv_exact(fd, e, 8, 0) < 0) return -1;
+			len = 0;
+			for (int i = 0; i < 8; i++) len = len << 8 | e[i];
+		}
+		if (masked && recv_exact(fd, mk, 4, 0) < 0) return -1;
+		if (len > 8u * 1024 * 1024) return -1;
+		if (op >= 0x8) {                                 /* Steuer-Frames */
+			uint8_t cb[125];
+			if (len > 125) return -1;
+			if (len && recv_exact(fd, cb, len, 0) < 0) return -1;
+			if (op == 0x8) return -1;                    /* close */
+			if (op == 0x9 && ws_send(fd, 0xA, (char *)cb, len)) return -1;   /* ping → pong */
+			continue;
+		}
+		if (ws_len + len + 1 > ws_cap) {
+			char *nb = realloc(ws_msg, ws_len + len + 1);
+			if (!nb) return -1;
+			ws_msg = nb;
+			ws_cap = ws_len + len + 1;
+		}
+		if (len && recv_exact(fd, ws_msg + ws_len, len, 0) < 0) return -1;
+		if (masked) for (uint64_t i = 0; i < len; i++) ws_msg[ws_len + i] ^= mk[i & 3];
+		ws_len += len;
+		ws_msg[ws_len] = 0;
+		if (fin) return 1;
+	}
+}
+
+static int ws_connect(const char *host, const char *port)
+{
+	struct addrinfo hints = { 0 }, *res, *ai;
+	int fd = -1;
+	hints.ai_family = AF_UNSPEC;
+	hints.ai_socktype = SOCK_STREAM;
+	if (getaddrinfo(host, port, &hints, &res)) return -1;
+	for (ai = res; ai; ai = ai->ai_next) {
+		fd = socket(ai->ai_family, ai->ai_socktype, ai->ai_protocol);
+		if (fd < 0) continue;
+		struct timeval tv = { 5, 0 };
+		setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof tv);
+		setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof tv);
+		if (connect(fd, ai->ai_addr, ai->ai_addrlen) == 0) break;
+		close(fd);
+		fd = -1;
+	}
+	freeaddrinfo(res);
+	if (fd < 0) return -1;
+
+	static const char b64[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+	uint8_t raw[16];
+	char key[25], req[512], resp[2048];
+	for (int i = 0; i < 16; i++) raw[i] = rand() & 0xFF;
+	for (int i = 0, o = 0; i < 16; i += 3) {
+		uint32_t v = raw[i] << 16 | (i + 1 < 16 ? raw[i + 1] << 8 : 0) | (i + 2 < 16 ? raw[i + 2] : 0);
+		key[o++] = b64[v >> 18 & 63];
+		key[o++] = b64[v >> 12 & 63];
+		key[o++] = i + 1 < 16 ? b64[v >> 6 & 63] : '=';
+		key[o++] = i + 2 < 16 ? b64[v & 63] : '=';
+	}
+	key[24] = 0;
+	snprintf(req, sizeof req,
+		 "GET /api/websocket HTTP/1.1\r\nHost: %s:%s\r\nUpgrade: websocket\r\n"
+		 "Connection: Upgrade\r\nSec-WebSocket-Key: %s\r\nSec-WebSocket-Version: 13\r\n\r\n",
+		 host, port, key);
+	if (send_all(fd, req, strlen(req))) { close(fd); return -1; }
+	size_t n = 0;
+	while (n < sizeof resp - 1) {                          /* HTTP-Antwort bis Leerzeile */
+		if (recv(fd, resp + n, 1, 0) != 1) { close(fd); return -1; }
+		n++;
+		if (n >= 4 && !memcmp(resp + n - 4, "\r\n\r\n", 4)) break;
+	}
+	resp[n] = 0;
+	if (!strstr(resp, " 101 ")) {
+		fprintf(stderr, "WebSocket-Upgrade abgelehnt: %.60s\n", resp);
+		close(fd);
+		return -1;
+	}
+	struct timeval tv = { 1, 0 };                          /* 1 s → Ping-Takt möglich */
+	setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof tv);
+	return fd;
+}
+
+/* kompaktes HA-Zustandsformat: {"s":state,"a":{attrs}} ; full = Anfangszustand */
+static void apply_state(ent_t *e, cJSON *o, int full)
+{
+	cJSON *st = cJSON_GetObjectItem(o, "s");
+	cJSON *at = cJSON_GetObjectItem(o, "a");
+	pthread_mutex_lock(&g_lock);
+	if (full) {
+		e->unit[0] = 0;
+		e->has_cur = e->has_target = 0;
+		snprintf(e->fname, sizeof e->fname, "%s", e->id);
+	}
+	if (cJSON_IsString(st)) snprintf(e->state, sizeof e->state, "%s", st->valuestring);
+	if (cJSON_IsObject(at)) {
+		cJSON *u  = cJSON_GetObjectItem(at, "unit_of_measurement");
+		cJSON *fn = cJSON_GetObjectItem(at, "friendly_name");
+		cJSON *cu = cJSON_GetObjectItem(at, "current_temperature");
+		cJSON *tg = cJSON_GetObjectItem(at, "temperature");
+		if (cJSON_IsString(u))  snprintf(e->unit, sizeof e->unit, "%s", u->valuestring);
+		if (cJSON_IsString(fn)) snprintf(e->fname, sizeof e->fname, "%s", fn->valuestring);
+		if (cu) { e->has_cur = cJSON_IsNumber(cu); e->cur = e->has_cur ? cu->valuedouble : 0; }
+		if (tg) { e->has_target = cJSON_IsNumber(tg); e->target = e->has_target ? tg->valuedouble : 0; }
+	}
+	e->valid = 1;
+	g_last_ok = g_ws_last = time(NULL);
+	pthread_mutex_unlock(&g_lock);
+}
+
+static void remove_attrs(ent_t *e, cJSON *o)
+{
+	cJSON *a = cJSON_GetObjectItem(o, "a"), *it;
+	if (!cJSON_IsArray(a)) return;
+	pthread_mutex_lock(&g_lock);
+	cJSON_ArrayForEach(it, a) {
+		if (!cJSON_IsString(it)) continue;
+		if (!strcmp(it->valuestring, "unit_of_measurement")) e->unit[0] = 0;
+		if (!strcmp(it->valuestring, "current_temperature")) e->has_cur = 0;
+		if (!strcmp(it->valuestring, "temperature")) e->has_target = 0;
+	}
+	pthread_mutex_unlock(&g_lock);
+}
+
+static void ws_session(int fd)
+{
+	int id = 1, authed = 0;
+	time_t last_ping = time(NULL);
+	char out[4096];
+	ws_len = 0;
+	for (;;) {
+		int r = ws_recv_msg(fd);
+		if (r < 0) { fprintf(stderr, "WebSocket getrennt\n"); return; }
+		if (r == 1) {
+			cJSON *j = cJSON_Parse(ws_msg);
+			ws_len = 0;
+			cJSON *ty = j ? cJSON_GetObjectItem(j, "type") : NULL;
+			const char *t = cJSON_IsString(ty) ? ty->valuestring : "";
+			if (!strcmp(t, "auth_required")) {
+				snprintf(out, sizeof out, "{\"type\":\"auth\",\"access_token\":\"%s\"}", cfg.token);
+				if (ws_send(fd, 0x1, out, strlen(out))) { cJSON_Delete(j); return; }
+			} else if (!strcmp(t, "auth_ok")) {
+				size_t o = snprintf(out, sizeof out,
+						    "{\"id\":%d,\"type\":\"subscribe_entities\",\"entity_ids\":[", ++id);
+				for (int i = 0; i < N_ENTS && o < sizeof out - 100; i++)
+					o += snprintf(out + o, sizeof out - o, "%s\"%s\"", i ? "," : "", ents[i].id);
+				snprintf(out + o, sizeof out - o, "]}");
+				if (ws_send(fd, 0x1, out, strlen(out))) { cJSON_Delete(j); return; }
+				authed = 1;
+				pthread_mutex_lock(&g_lock);
+				g_last_ok = g_ws_last = time(NULL);
+				pthread_mutex_unlock(&g_lock);
+				fprintf(stderr, "WebSocket verbunden, %d Entities abonniert\n", N_ENTS);
+			} else if (!strcmp(t, "auth_invalid")) {
+				fprintf(stderr, "WebSocket: Token ungültig\n");
+				cJSON_Delete(j);
+				sleep(60);
+				return;
+			} else if (!strcmp(t, "pong")) {
+				pthread_mutex_lock(&g_lock);
+				g_last_ok = g_ws_last = time(NULL);
+				pthread_mutex_unlock(&g_lock);
+			} else if (!strcmp(t, "result")) {
+				cJSON *ok = cJSON_GetObjectItem(j, "success");
+				if (!cJSON_IsTrue(ok)) fprintf(stderr, "WebSocket: Befehl abgelehnt\n");
+			} else if (!strcmp(t, "event")) {
+				cJSON *ev = cJSON_GetObjectItem(j, "event"), *it;
+				cJSON *add = ev ? cJSON_GetObjectItem(ev, "a") : NULL;
+				cJSON *chg = ev ? cJSON_GetObjectItem(ev, "c") : NULL;
+				if (cJSON_IsObject(add))
+					cJSON_ArrayForEach(it, add) {
+						ent_t *e = find_ent(it->string);
+						if (e) apply_state(e, it, 1);
+					}
+				if (cJSON_IsObject(chg))
+					cJSON_ArrayForEach(it, chg) {
+						ent_t *e = find_ent(it->string);
+						if (!e) continue;
+						cJSON *plus = cJSON_GetObjectItem(it, "+");
+						cJSON *minus = cJSON_GetObjectItem(it, "-");
+						if (plus) apply_state(e, plus, 0);
+						if (minus) remove_attrs(e, minus);
+					}
+			}
+			cJSON_Delete(j);
+		}
+		if (authed && time(NULL) - last_ping >= 10) {
+			snprintf(out, sizeof out, "{\"id\":%d,\"type\":\"ping\"}", ++id);
+			if (ws_send(fd, 0x1, out, strlen(out))) return;
+			last_ping = time(NULL);
+		}
+	}
+}
+
+static void *ws_thread(void *arg)
+{
+	char host[200], port[16];
+	int backoff = 1;
+	if (url_hostport(host, sizeof host, port, sizeof port)) {
+		fprintf(stderr, "WebSocket: nur http:// unterstützt – bleibe bei REST-Polling\n");
+		return NULL;
+	}
+	srand(time(NULL) ^ getpid());
+	for (;;) {
+		int fd = ws_connect(host, port);
+		if (fd >= 0) {
+			backoff = 1;
+			ws_session(fd);
+			close(fd);
+		}
+		sleep(backoff);
+		if (backoff < 30) backoff *= 2;
 	}
 	return NULL;
 }
@@ -1052,9 +1364,10 @@ int main(int argc, char **argv)
 	fonts_init();
 	ui_build();
 
-	pthread_t th1, th2;
+	pthread_t th1, th2, th3;
 	pthread_create(&th1, NULL, worker, NULL);
 	pthread_create(&th2, NULL, camera, NULL);
+	pthread_create(&th3, NULL, ws_thread, NULL);
 	lv_timer_create(ui_timer, 250, NULL);
 	lv_timer_create(env_timer, 2000, NULL);
 	last_touch = time(NULL);

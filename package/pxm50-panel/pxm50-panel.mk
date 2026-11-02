@@ -1,7 +1,7 @@
 ################################################################################
 # pxm50-panel – LVGL-HA-Panel (Quellen lokal, LVGL aus Paket pxm50-lvgl)
 ################################################################################
-PXM50_PANEL_VERSION = 0.7.2
+PXM50_PANEL_VERSION = 0.8
 PXM50_PANEL_SITE = $(BR2_EXTERNAL_PXM50_PATH)/src/pxm50-panel
 PXM50_PANEL_SITE_METHOD = local
 PXM50_PANEL_LICENSE = MIT

@@ -1,4 +1,4 @@
-# PXM50 → HA-Panel — NOTES (v0.7)
+# PXM50 → HA-Panel — NOTES (v0.8)
 
 ## Status
 - v0.1 bootet: DDR2-Default (BBW) ok, 512 MB, 720 MHz, LCD ok, RGMII/AR8031 1 Gbit ok
@@ -27,7 +27,10 @@
 ## HA-Panel (v0.6)
 - Paket package/pxm50-panel, Quelle src/pxm50-panel (main.c, lv_conf.h), LVGL 9.2.2 aus Paket pxm50-lvgl (local-Pakete laden keine EXTRA_DOWNLOADS)
 - fbdev-Flush mit R/B-Tausch (fb0 = BG16), tslib-Indev, DejaVu via TinyTTF
-- HA: REST-Polling 3 s, Service-Calls per Queue; Kamera /api/camera_proxy ~1 fps, 420x236
+- HA (v0.8): WebSocket /api/websocket, subscribe_entities nur für ents[], Ping 10 s, Reconnect 1..30 s Backoff
+  REST: Service-Calls (Queue), Zeit-Sync (Date-Header), Fallback-Polling 3 s wenn WS > 20 s stumm
+  nur ws:// (http) – https braucht TLS (nicht implementiert)
+- Kamera /api/camera_proxy ~1 fps, 420x236
 - Schalter: LANGER Druck = toggle (UWP WW, UWP WP=switch.tasmota, UWP S, IRH 650, IRH 1300)
 - Thermostate: −/+ 0,5 K, Aus/Auto/Heizen
 - Backlight nach Lux (EMA), 60 s voll nach Touch; rote LED = HA nicht erreichbar
@@ -63,4 +66,4 @@ LED gpio3_21 · DFU-Taste gpio1_27 · NAND-WP# gpio0_31 (Hog LOW)
 - [ ] Link-Flaps beobachten (ggf. EEE aus)
 - [ ] PMIC + cpufreq, memtester
 - [ ] v0.6 auf Hardware testen (Layout, Fonts, Kamera-fps)
-- [ ] später: WebSocket statt Polling, History-Kurve, Deye-Seite
+- [ ] später: History-Kurve, Deye-Seite, Entities in Config auslagern
