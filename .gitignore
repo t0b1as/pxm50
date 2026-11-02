@@ -7,3 +7,4 @@ zImage
 vmlinux
 pxm50-eeprom.txt
 ha.conf
+wifi.conf

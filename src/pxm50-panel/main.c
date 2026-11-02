@@ -2,7 +2,7 @@
  * pxm50-panel – Home-Assistant-Wandpanel für Siemens PXM50 (AM335x, 1376x768)
  *
  * - LVGL 9.2, eigener fbdev-Flush (Panel ist BGR565 → R/B-Tausch beim Kopieren)
- * - Touch über tslib (pointercal), Schalter per langem Druck
+ * - Touch über tslib (pointercal), Schalter per Antippen
  * - HA WebSocket-API: subscribe_entities (nur Panel-Entities), Ping 10 s, Reconnect mit Backoff;
  *   REST nur noch für Service-Calls, Zeit-Sync und als Fallback-Polling, wenn WS > 20 s weg ist
  * - Kamera: /api/camera_proxy als JPEG, libjpeg-turbo mit Skalierung beim Dekodieren;
@@ -95,6 +95,8 @@ static ent_t ents[] = {
 	{ .id = "sensor.smart_meter_summe_der_aktiven_momentanleistung", .label = "Netz" },
 	{ .id = "sensor.smart_meter_positive_wirkenergie_insgesamt", .label = "Bezug gesamt" },
 	{ .id = "sensor.smart_meter_negative_wirkenergie_insgesamt", .label = "Einspeisung gesamt" },
+	{ .id = "sensor.deye_battery_power", .label = "Batterie Leistung" },
+	{ .id = "sensor.deye_battery_soc", .label = "Batterie Ladung" },
 	{ .id = "sensor.wp_energy_power", .label = "WP Leistung" },
 	{ .id = "sensor.wp_energie", .label = "WP Energie" },
 	{ .id = "sensor.wp_zahler", .label = "WP Zähler" },
@@ -1045,7 +1047,8 @@ static void ui_build(void)
 	const int x1 = 12, w1 = 440, x2 = x1 + w1 + G, w2 = 440, x3 = x2 + w2 + G, w3 = 1376 - x3 - 12;
 
 	/* Spalte 1: Strom */
-	lv_obj_t *c = mk_card(scr, x1, Y, w1, 300, "Strom");
+	const int hs = 344;                              /* Höhe Strom-Karte */
+	lv_obj_t *c = mk_card(scr, x1, Y, w1, hs, "Strom");
 	net_big = lv_label_create(c);
 	lv_label_set_text(net_big, "…");
 	style_label(net_big, f_big, C_TEXT);
@@ -1053,13 +1056,15 @@ static void ui_build(void)
 	lv_label_set_text(net_sub, "");
 	style_label(net_sub, f_small, C_DIM);
 	lv_obj_set_style_pad_bottom(net_sub, 6, 0);
+	mk_row(c, "sensor.deye_battery_power");
+	mk_row(c, "sensor.deye_battery_soc");
+	mk_row(c, "sensor.wp_energy_power");
 	mk_row(c, "sensor.smart_meter_positive_wirkenergie_insgesamt");
 	mk_row(c, "sensor.smart_meter_negative_wirkenergie_insgesamt");
-	mk_row(c, "sensor.wp_energy_power");
 	mk_row(c, "sensor.wp_energie");
 
 	/* Spalte 1: Schalter */
-	c = mk_card(scr, x1, Y + 300 + G, w1, H - 300 - G, "Schalter  (lang drücken)");
+	c = mk_card(scr, x1, Y + hs + G, w1, H - hs - G, "Schalter");
 	lv_obj_t *grid = lv_obj_create(c);
 	lv_obj_remove_style_all(grid);
 	lv_obj_set_size(grid, LV_PCT(100), LV_SIZE_CONTENT);
@@ -1070,14 +1075,14 @@ static void ui_build(void)
 	for (int i = 0; i < N_TILES; i++) {
 		tile_t *tl = &tiles[i];
 		tl->tile = lv_obj_create(grid);
-		lv_obj_set_size(tl->tile, 201, 96);
+		lv_obj_set_size(tl->tile, 201, 86);
 		lv_obj_set_style_bg_color(tl->tile, C_OFF, 0);
 		lv_obj_set_style_bg_color(tl->tile, C_BTN, LV_STATE_PRESSED);
 		lv_obj_set_style_border_width(tl->tile, 0, 0);
 		lv_obj_set_style_radius(tl->tile, 12, 0);
 		lv_obj_set_style_pad_all(tl->tile, 10, 0);
 		lv_obj_remove_flag(tl->tile, LV_OBJ_FLAG_SCROLLABLE);
-		lv_obj_add_event_cb(tl->tile, tile_cb, LV_EVENT_LONG_PRESSED, tl);
+		lv_obj_add_event_cb(tl->tile, tile_cb, LV_EVENT_CLICKED, tl);
 		tl->name = lv_label_create(tl->tile);
 		lv_label_set_text(tl->name, find_ent(tl->sw)->label);
 		style_label(tl->name, f_tile, C_TEXT);
@@ -1244,7 +1249,6 @@ static void ui_timer(lv_timer_t *tm)
 	if (ne->valid && end != ne->state && !*end) {
 		snprintf(buf, sizeof buf, "%.0f %s", fabs(nv), ne->unit);
 		set_text(net_big, buf);
-		lv_obj_set_style_text_color(net_big, nv > 0 ? C_RED : C_GREEN, 0);
 		set_text(net_sub, nv > 0 ? "Netzbezug" : "Einspeisung");
 	}
 

@@ -1,0 +1,7 @@
+# Kopieren nach /etc/pxm50/wifi.conf, chmod 600. Nicht ins Git!
+ctrl_interface=/var/run/wpa_supplicant
+country=DE
+network={
+	ssid="datenschleuder"
+	psk="3DsAmvUbdeVxzz6U7ozi"
+}

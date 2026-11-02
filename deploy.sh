@@ -15,7 +15,7 @@ tar -C "$IMG" -cf - zImage am335x-pxm50.dtb am335x-pxm50-int22.dtb \
 | $S 'mount /dev/mmcblk0p1 /mnt 2>/dev/null; tar -C /mnt -xf - && sync && umount /mnt'
 
 # Rootfs: Overlay komplett + tslib/evtest aus dem Build
-( cd "$TGT" && ls -d usr/lib/libts* usr/lib/ts usr/bin/ts_* usr/bin/evtest usr/bin/pxm50-panel usr/lib/libcurl* usr/lib/libcjson* usr/lib/libjpeg* usr/lib/libturbojpeg* usr/lib/libz.so* usr/share/fonts/dejavu 2>/dev/null || true ) > /tmp/pxm50-deploy.lst
+( cd "$TGT" && ls -d usr/lib/libts* usr/lib/ts usr/bin/ts_* usr/bin/evtest usr/bin/pxm50-panel usr/lib/libcurl* usr/lib/libcjson* usr/lib/libjpeg* usr/lib/libturbojpeg* usr/lib/libz.so* usr/share/fonts/dejavu usr/sbin/wpa_supplicant usr/sbin/wpa_cli usr/sbin/iw usr/lib/libnl* usr/lib/libssl* usr/lib/libcrypto* lib/firmware/rt2870.bin lib/firmware/regulatory.db* 2>/dev/null || true ) > /tmp/pxm50-deploy.lst
 { tar -C "$OV" -cf - . ; } | $S 'tar -C / -xf -'
 tar -C "$TGT" -cf - -T /tmp/pxm50-deploy.lst | $S 'tar -C / -xf -'
 

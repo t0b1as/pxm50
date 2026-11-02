@@ -1,0 +1,21 @@
+#!/bin/sh
+# WLAN über /etc/pxm50/wifi.conf (wpa_supplicant-Format), DHCP per udhcpc
+CONF=/etc/pxm50/wifi.conf
+case "$1" in
+start)
+	[ -f "$CONF" ] || exit 0
+	(
+		i=0; while [ ! -e /sys/class/net/wlan0 ] && [ $i -lt 20 ]; do sleep 1; i=$((i+1)); done
+		[ -e /sys/class/net/wlan0 ] || { echo "wifi: kein wlan0" > /dev/kmsg; exit 0; }
+		iw reg set DE 2>/dev/null
+		wpa_supplicant -B -D nl80211 -i wlan0 -c "$CONF"
+		udhcpc -b -S -i wlan0 -p /var/run/udhcpc.wlan0.pid
+	) &
+	;;
+stop)
+	killall -q wpa_supplicant
+	kill $(cat /var/run/udhcpc.wlan0.pid 2>/dev/null) 2>/dev/null
+	;;
+restart) "$0" stop; sleep 1; "$0" start ;;
+esac
+exit 0

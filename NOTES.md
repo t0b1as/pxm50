@@ -31,14 +31,15 @@
   REST: Service-Calls (Queue), Zeit-Sync (Date-Header), Fallback-Polling 3 s wenn WS > 20 s stumm
   nur ws:// (http) – https braucht TLS (nicht implementiert)
 - Kamera /api/camera_proxy ~1 fps, 420x236
-- Schalter: LANGER Druck = toggle (UWP WW, UWP WP=switch.tasmota, UWP S, IRH 650, IRH 1300)
+- Schalter: Antippen = toggle (v0.8.1; vorher langer Druck) – UWP WW, UWP WP=switch.tasmota, UWP S, IRH 650, IRH 1300
 - Thermostate: −/+ 0,5 K, Aus/Auto/Heizen
 - Backlight nach Lux (EMA), 60 s voll nach Touch; rote LED = HA nicht erreichbar
 - Config: /etc/pxm50/ha.conf (HA_URL, HA_TOKEN, CAMERA) – Token eines eigenen Nicht-Admin-Users
 - Start: /etc/init.d/S90panel (Schleife), Log /var/log/pxm50-panel.log
 - v0.7: Kamera-Vollbild (Seite 2): Tap auf Kachel → 1376x768, Tap → zurück, KEINE Auto-Rückkehr (v0.7.1);
   camera_proxy mit ?width=&height= (serverseitige Skalierung, falls Integration unterstützt)
-- Deye bewusst weggelassen (Modbus-Problem offen)
+- Strom-Karte (v0.8.1): Netz groß neutral (kein Rot/Grün), Batterie Leistung + Ladung (deye_battery_power/soc), WP Leistung, Bezug, Einspeisung, WP Energie
+- übrige Deye-Werte weiterhin nicht im Panel
 - Zeit: S49ntp (busybox ntpd, NTP_SERVER in ha.conf) + Panel stellt Uhr per HTTP-Date von HA (alle 10 min, >3 s Drift)
 - Kopfzeile: "Wochentag, TT.MM.JJJJ   HH:MM:SS" (TZ CET/CEST in S90panel)
 - deploy.sh: ls-Liste mit "|| true" (fehlende libz.so* brach sonst still ab)
