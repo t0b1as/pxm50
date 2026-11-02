@@ -311,7 +311,7 @@ static void *worker(void *arg)
 			run_cmds(c, &m);
 			poll_ent(c, &ents[i], &m);
 		}
-		for (int t = 0; t < 30; t++) {       /* 3 s Pause, Befehle sofort */
+		for (int t = 0; t < 10; t++) {       /* 1 s Pause, Befehle sofort */
 			run_cmds(c, &m);
 			usleep(100000);
 		}
