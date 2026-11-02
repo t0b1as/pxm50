@@ -7,7 +7,7 @@ OUT="$EXT/output"
 # WSL: Windows-PATH mit Leerzeichen bricht Buildroot
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
-[ -d "$BR" ] || git clone -b 2025.02.x https://gitlab.com/buildroot.org/buildroot.git "$BR"
+[ -d "$BR" ] || git clone -b 2025.02.19-115-gefc09a0fce https://gitlab.com/buildroot.org/buildroot.git "$BR"
 [ -f "$OUT/.config" ] || make -C "$BR" BR2_EXTERNAL="$EXT" O="$OUT" pxm50_defconfig
 make -C "$BR" O="$OUT" -j"$(nproc)"
 ls -lh "$OUT/images/sdcard.img"
