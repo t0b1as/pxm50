@@ -1,0 +1,94 @@
+# Beispiel-Dashboard für das PXM50-Panel (entspricht der bisherigen festen Oberfläche v0.8.1)
+# In HA: Einstellungen → Dashboards → Dashboard hinzufügen → "Neues Dashboard von Grund auf",
+# URL z. B. "pxm50", dann ⋮ → Dashboard bearbeiten → ⋮ → Raw-Konfigurationseditor → einfügen.
+title: PXM50
+views:
+  - title: Haus
+    path: haus
+    cards:
+      - type: vertical-stack
+        cards:
+          - type: tile
+            entity: sensor.smart_meter_summe_der_aktiven_momentanleistung
+            name: Netz
+          - type: entities
+            title: Strom
+            entities:
+              - entity: sensor.deye_battery_power
+                name: Batterie Leistung
+              - entity: sensor.deye_battery_soc
+                name: Batterie Ladung
+              - entity: sensor.wp_energy_power
+                name: WP Leistung
+              - entity: sensor.smart_meter_positive_wirkenergie_insgesamt
+                name: Bezug gesamt
+              - entity: sensor.smart_meter_negative_wirkenergie_insgesamt
+                name: Einspeisung gesamt
+          - type: grid
+            columns: 2
+            cards:
+              - type: tile
+                entity: switch.uwp_ww
+                name: UWP WW
+              - type: tile
+                entity: switch.tasmota
+                name: UWP WP
+              - type: tile
+                entity: switch.uwp_s
+                name: UWP S
+              - type: tile
+                entity: switch.irh_650
+                name: IRH 650
+              - type: tile
+                entity: switch.irh_1300
+                name: IRH 1300
+      - type: vertical-stack
+        cards:
+          - type: entities
+            title: Wärmepumpen
+            entities:
+              - entity: sensor.heizleistung_wp1
+                name: WP1 Heizleistung
+              - entity: sensor.cop1
+                name: WP1 COP
+              - entity: sensor.heizleistung_wp2
+                name: WP2 Heizleistung
+              - entity: sensor.cop2
+                name: WP2 COP
+              - sensor.wp11
+              - sensor.wp12
+              - sensor.wp21
+              - sensor.wp22
+          - type: entities
+            title: Heizung
+            entities:
+              - entity: sensor.vscotho1_200_01_aussentemperatur
+                name: Außen
+              - entity: sensor.vscotho1_200_01_ww_speichertemperatur
+                name: WW-Speicher
+              - entity: water_heater.vscotho1_200_01_warmwasser
+                name: Warmwasser
+              - entity: sensor.vscotho1_200_01_vorlauftemperatur
+                name: Vorlauf 1
+              - entity: sensor.vscotho1_200_01_brenner_modulation
+                name: Brenner
+              - entity: binary_sensor.vscotho1_200_01_zirkulationspumpe
+                name: Zirkulation
+      - type: vertical-stack
+        cards:
+          - type: picture-entity
+            entity: camera.eastside_flussig
+            show_state: false
+            show_name: false
+          - type: thermostat
+            entity: climate.vscotho1_200_01_heizung
+            name: Heizkreis 1
+            features:
+              - type: climate-hvac-modes
+                hvac_modes: ['off', auto, heat]
+          - type: thermostat
+            entity: climate.vscotho1_200_01_heizung_2
+            name: Heizkreis 2
+            features:
+              - type: climate-hvac-modes
+                hvac_modes: ['off', auto, heat]

@@ -1,6 +1,9 @@
 # Kopieren nach /etc/pxm50/ha.conf und ausfüllen (chmod 600). Nicht ins Git!
 HA_URL=http://192.168.1.10:8123
 HA_TOKEN=hier-den-langlebigen-Token-des-Panel-Benutzers
-CAMERA=camera.eastside_flussig
+# URL-Pfad des Dashboards (in HA: Einstellungen → Dashboards), leer = Standard-Dashboard
+HA_DASHBOARD=pxm50
+# Ansicht: Index (0 = erste) oder path der Ansicht
+HA_VIEW=0
 # optional: eigener NTP-Server (z. B. Router), Standard de.pool.ntp.org
 #NTP_SERVER=192.168.1.1
